@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Trening wypisywania recept magistralnych z automatycznym sprawdzaniem.">
+<title>Trening recept</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+html{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}
+/* Layout: single narrow column — task, mode tabs, prescription input, results. Neutral zinc palette, shadcn-like controls */
+:root{
+  --bg:#ffffff; --fg:#09090b; --muted:#f4f4f5; --muted-fg:#71717a; --border:#e4e4e7; --input:#e4e4e7; --ring:#a1a1aa;
+  --primary:#18181b; --primary-fg:#fafafa; --ok:#16a34a; --bad:#dc2626; --warn:#d97706;
+  --sans:"Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; --mono:"Geist Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#09090b; --fg:#fafafa; --muted:#18181b; --muted-fg:#a1a1aa; --border:#27272a; --input:#27272a; --ring:#52525b;
+  --primary:#fafafa; --primary-fg:#18181b; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#09090b; --fg:#fafafa; --muted:#18181b; --muted-fg:#a1a1aa; --border:#27272a; --input:#27272a; --ring:#52525b;
+  --primary:#fafafa; --primary-fg:#18181b; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:680px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));display:flex;flex-direction:column;gap:20px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-size:18px;font-weight:600;margin:0;letter-spacing:-.01em}
+.muted{color:var(--muted-fg)}
+.small{font-size:12px}
+select,input,textarea,button{font:inherit;color:inherit}
+.input,select,textarea{height:36px;border:1px solid var(--input);background:transparent;border-radius:6px;padding:0 10px;min-width:0;transition:border-color .15s, box-shadow .15s}
+textarea{height:auto;padding:10px 12px;resize:vertical;font-family:var(--mono);font-size:13px;line-height:1.75;width:100%}
+.input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in srgb, var(--ring) 25%, transparent)}
+button{height:36px;border-radius:6px;padding:0 14px;border:1px solid var(--input);background:transparent;cursor:pointer;font-weight:500;white-space:nowrap}
+button:hover{background:var(--muted)}
+button:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent)}
+button.primary{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
+button.primary:hover{opacity:.9;background:var(--primary)}
+button.ghost{border-color:transparent;color:var(--muted-fg)}
+button.icon{width:36px;padding:0}
+.bar{display:flex;gap:8px;align-items:center}
+#taskSel{flex:1}
+.card{border:1px solid var(--border);border-radius:8px;padding:16px}
+.label{font-size:12px;font-weight:500;color:var(--muted-fg)}
+.task-text{margin:6px 0 0;font-size:14px}
+details summary{cursor:pointer;color:var(--muted-fg);font-size:13px;list-style:none}
+details summary::before{content:"+ ";font-family:var(--mono)}
+details[open] summary::before{content:"− "}
+.latin{margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.hint{font-style:italic;margin-top:2px}
+.tabs{display:inline-flex;background:var(--muted);border-radius:8px;padding:3px;gap:2px;align-self:flex-start}
+.tabs button{height:30px;border:0;border-radius:5px;padding:0 12px;color:var(--muted-fg);background:transparent}
+.tabs button[aria-selected="true"]{background:var(--bg);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.panel{display:flex;flex-direction:column;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.sep{height:1px;background:var(--border)}
+.rows{display:flex;flex-direction:column;gap:6px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 8.5em 36px;gap:6px}
+.row .input,.mono{font-family:var(--mono);font-size:13px}
+.line{display:grid;grid-template-columns:3.4em minmax(0,1fr);gap:8px;align-items:center}
+.line>span{font-family:var(--mono);font-size:13px;color:var(--muted-fg)}
+.dose{display:grid;grid-template-columns:minmax(0,1fr) 6em;gap:6px}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted-fg)}
+.chk input{width:16px;height:16px;accent-color:var(--primary)}
+.ok-f{border-color:color-mix(in srgb, var(--ok) 60%, var(--input))!important}
+.bad-f{border-color:var(--bad)!important}
+code{font-family:var(--mono);font-size:12px;background:var(--muted);padding:1px 5px;border-radius:4px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+#res:empty{display:none}
+.score{display:flex;align-items:center;gap:10px;margin:0 0 12px;font-weight:600}
+.badge{font-size:12px;font-weight:500;border:1px solid var(--border);border-radius:999px;padding:1px 9px;color:var(--muted-fg)}
+.badge.ok{color:var(--ok);border-color:color-mix(in srgb, var(--ok) 40%, var(--border))}
+.items{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.items li{display:grid;grid-template-columns:18px 1fr;gap:8px;padding:7px 0;border-top:1px solid var(--border);font-size:13px}
+.items li:first-child{border-top:0}
+.items li::before{font-family:var(--mono);font-weight:600}
+.items li.ok::before{content:"✓";color:var(--ok)} .items li.bad::before{content:"✕";color:var(--bad)} .items li.warn::before{content:"!";color:var(--warn)}
+.items li.ok{color:var(--muted-fg)}
+pre{font-family:var(--mono);font-size:12.5px;background:var(--muted);border-radius:6px;padding:12px;white-space:pre-wrap;margin:10px 0 0;overflow-x:auto}
+.ref table{border-collapse:collapse;width:100%;margin-top:10px;font-size:13px}
+.ref td{border-top:1px solid var(--border);padding:6px 8px 6px 0;vertical-align:top}
+.ref td:first-child{color:var(--muted-fg);width:42%}
+.scroll{overflow-x:auto}
+@media (max-width:480px){.row{grid-template-columns:minmax(0,1fr) 6.8em 36px}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Trening recept</h1>
+    <span class="muted small" id="prog"></span>
+  </header>
+
+  <div class="bar">
+    <select id="taskSel" aria-label="Wybierz zadanie"></select>
+    <button class="icon" id="prev" aria-label="Poprzednie zadanie">‹</button>
+    <button class="icon" id="next" aria-label="Następne zadanie">›</button>
+    <button id="rand">Losuj</button>
+  </div>
+
+  <section class="card">
+    <div class="label" id="meta"></div>
+    <p class="task-text" id="ttext"></p>
+    <div class="latin"><span class="label">Łacińskie nazwy leków</span><div class="hint" id="hint"></div></div>
+  </section>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabFree" aria-selected="true">Pisanie</button>
+    <button role="tab" id="tabForm" aria-selected="false">Formularz</button>
+  </div>
+
+  <form class="panel" id="formPanel" hidden autocomplete="off">
+    <div class="grid3">
+      <label class="field"><span class="label">Recepta</span><select id="rxType"><option>Rp</option><option>Rpw</option></select></label>
+      <label class="field"><span class="label">Dopisek</span><input class="input" type="text" id="dop" placeholder="Cito, Pro usu proprio…"></label>
+      <label class="field"><span class="label">Realizacja od</span><input class="input" type="text" id="real" placeholder="dd.mm.rrrr"></label>
+    </div>
+    <div class="sep"></div>
+    <div class="label">Rp.</div>
+    <div class="rows" id="rows"></div>
+    <div class="bar" style="justify-content:space-between;flex-wrap:wrap">
+      <button type="button" class="ghost" id="addRow" style="padding-left:0">+ składnik</button>
+      <span class="muted small"><code>0,5</code> <code>ad 50,0</code> <code>aa ad 50,0</code> <code>q.s.</code> <code>300 000 j.m.</code></span>
+    </div>
+    <div class="line"><span>M. f.</span><input class="input mono" type="text" id="sub" placeholder="M. f. pulv." aria-label="Subscriptio"></div>
+    <div class="line"><span>No</span><div class="dose"><select id="doseM" aria-label="Sposób dawkowania"><option value="">nie dotyczy</option><option value="dtd">d.t.d. No</option><option value="div">div. in part. aeq. No</option></select><input class="input mono" type="text" id="doseN" inputmode="numeric" placeholder="20" aria-label="Liczba dawek"></div></div>
+    <div class="line"><span>D.S.</span><input class="input" type="text" id="ds" placeholder="Sposób użycia" aria-label="Signatura"></div>
+    <div class="grid3">
+      <label class="field"><span class="label">Słowne powtórzenie</span><input class="input" type="text" id="slow" placeholder="tylko gdy wymagane"></label>
+      <label class="chk" style="align-self:end;height:36px"><input type="checkbox" id="excl"> Przekroczenie dawki max (!)</label>
+    </div>
+    <div class="actions">
+      <button type="submit" class="primary">Sprawdź</button>
+      <button type="button" class="showSol">Rozwiązanie</button>
+      <button type="button" class="ghost clear">Wyczyść</button>
+    </div>
+  </form>
+
+  <form class="panel" id="freePanel" autocomplete="off">
+    <textarea id="free" rows="12" spellcheck="false" aria-label="Recepta – pisanie odręczne" placeholder="Pro usu proprio
+Rp.
+Acidi tannici 0,5
+Acidi borici 5,0
+Talci
+Tritici amyli aa ad 50,0
+M. f. pulv.
+D.S. Zasypka, 2 x dziennie na zmienioną skórę"></textarea>
+    <p class="muted small" style="margin:0"><b style="color:var(--fg);font-weight:500">Ctrl/⌘ + Enter</b> sprawdza. Pisz jak na blankiecie, linia po linii. Rozpoznaję: <code>Rpw</code>, dopiski (<code>Cito</code>, <code>Pro usu proprio</code>, <code>Pro familiae</code>, <code>Sine conservantia</code>, <code>Realizacja od …</code>), <code>Rp.</code>, składniki z ilością (<code>aa</code>, <code>ad</code>, <code>q.s.</code>, <code>j.m.</code>, kilka nazw po przecinku przed <code>aa</code>), <code>M. f. …</code> / <code>M.D.S.</code>, <code>d.t.d. No 20</code> / <code>div. in part. aeq. No 20</code>, <code>D.S. …</code>. Wykrzyknik po ilości = przekroczenie dawki, tekst w nawiasie po ilości = słowne powtórzenie.</p>
+    <div class="actions">
+      <button type="submit" class="primary">Sprawdź</button>
+      <button type="button" class="showSol">Rozwiązanie</button>
+      <button type="button" class="ghost clear">Wyczyść</button>
+    </div>
+  </form>
+
+  <section class="card" id="res"></section>
+
+  <section class="ref">
+    <details><summary>Ściąga: ryczałty, krople, skróty</summary>
+      <div class="scroll"><table>
+        <tr><td>Proszki dzielone</td><td>20 szt. (max 40)</td></tr>
+        <tr><td>Proszki niedzielone</td><td>80 g (max 160 g)</td></tr>
+        <tr><td>Czopki, globulki</td><td>12 szt. (max 24)</td></tr>
+        <tr><td>Płyny wewnętrzne</td><td>250 g (max 500 g)</td></tr>
+        <tr><td>Płyny zewnętrzne</td><td>500 g (max 1000 g)</td></tr>
+        <tr><td>Maści, kremy, pasty</td><td>100 g (max 1000 g)</td></tr>
+        <tr><td>Krople wewn./zewn.</td><td>40 g (max 80 g)</td></tr>
+        <tr><td>Krople / maści do oczu, nosa</td><td>10 g (max 20 g)</td></tr>
+        <tr><td>Masa czopka / globulki</td><td>dorośli 2 g, dzieci 1 g / 3 g</td></tr>
+        <tr><td>Krople</td><td>1 g wodnego = 20 kropli · 1 g alkoholowego = 50 kropli</td></tr>
+        <tr><td>Skróty</td><td>aa – po równo · ad – do · q.s. – ile potrzeba · d.t.d. No – daj takich dawek</td></tr>
+        <tr><td>N/P</td><td>I-N, II-P → Rpw + słownie · II-N, III-P, IV-P → Rp + słownie</td></tr>
+      </table></div>
+    </details>
+  </section>
+</div>
+
+<script>
+// ---------- substance library: gen = accepted genitive forms, nom = nominative (for feedback), pl = Polish name
+const L = {
+ menthol:{pl:'mentol',gen:['Mentholi'],nom:['Mentholum']},
+ anaesth:{pl:'anestezyna (benzokaina)',gen:['Anaesthesini','Benzocaini'],nom:['Anaesthesinum','Benzocainum']},
+ talc:{pl:'talk',gen:['Talci'],nom:['Talcum']},
+ tritici:{pl:'skrobia pszeniczna',gen:['Tritici amyli'],nom:['Tritici amylum']},
+ solani:{pl:'skrobia ziemniaczana',gen:['Solani amyli'],nom:['Solani amylum']},
+ zno:{pl:'tlenek cynku',gen:['Zinci oxydi'],nom:['Zinci oxydum']},
+ tannic:{pl:'kwas taninowy (tanina)',gen:['Acidi tannici','Tannini'],nom:['Acidum tannicum','Tanninum']},
+ boric:{pl:'kwas borny',gen:['Acidi borici'],nom:['Acidum boricum']},
+ nasal:{pl:'salicylan sodu',gen:['Natrii salicylatis'],nom:['Natrii salicylas']},
+ nabenz:{pl:'benzoesan sodu',gen:['Natrii benzoatis'],nom:['Natrii benzoas']},
+ nahco3:{pl:'wodorowęglan sodu',gen:['Natrii bicarbonici','Natrii hydrocarbonatis','Natrii hydrogenocarbonatis'],nom:['Natrium bicarbonicum','Natrii hydrocarbonas']},
+ nacl:{pl:'chlorek sodu',gen:['Natrii chloridi'],nom:['Natrium chloridum','Natrium chloridum']},
+ bismuth:{pl:'zasadowy galusan bizmutawy',gen:['Bismuthi subgallatis','Dermatoli'],nom:['Bismuthi subgallas','Dermatolum']},
+ salic:{pl:'kwas salicylowy',gen:['Acidi salicylici'],nom:['Acidum salicylicum']},
+ metamizol:{pl:'metamizol sodowy',gen:['Metamizoli natrici','Metamizoli','Pyralgini'],nom:['Metamizolum natricum','Metamizolum','Pyralginum']},
+ lactose:{pl:'laktoza',gen:['Lactosi','Sacchari lactis'],nom:['Lactosum','Saccharum lactis']},
+ sacch:{pl:'sacharoza',gen:['Saccharosi','Sacchari'],nom:['Saccharosum','Saccharum']},
+ calclact:{pl:'mleczan wapnia',gen:['Calcii lactatis'],nom:['Calcii lactas']},
+ sildenafil:{pl:'cytrynian sildenafilu',gen:['Sildenafili citratis'],nom:['Sildenafili citras']},
+ propranolol:{pl:'propranolol (Propranolol)',gen:['Propranolol','Propranololi','Propranololi hydrochloridi'],nom:['Propranololum']},
+ furagina:{pl:'furazydyna (Furagina)',gen:['Furagina','Furaginae','Furazidini'],nom:['Furazidinum']},
+ codeine:{pl:'fosforan kodeiny',gen:['Codeini phosphatis'],nom:['Codeini phosphas']},
+ paracetamol:{pl:'paracetamol',gen:['Paracetamoli'],nom:['Paracetamolum']},
+ morphine:{pl:'chlorowodorek morfiny',gen:['Morphini hydrochloridi'],nom:['Morphini hydrochloridum']},
+ asa:{pl:'kwas acetylosalicylowy',gen:['Acidi acetylsalicylici'],nom:['Acidum acetylsalicylicum']},
+ ephedrine:{pl:'chlorowodorek efedryny',gen:['Ephedrini hydrochloridi'],nom:['Ephedrini hydrochloridum']},
+ diphergan:{pl:'prometazyna (Diphergan)',gen:['Diphergan','Diphergani','Promethazini hydrochloridi'],nom:['Dipherganum','Promethazini hydrochloridum']},
+ cacao:{pl:'masło kakaowe',gen:['Cacao olei','Butyri cacao'],nom:['Cacao oleum','Butyrum cacao']},
+ witepsol:{pl:'Witepsol H15',gen:['Witepsol H15','Witepsoli H15','Witepsol','Witepsoli'],nom:[]},
+ atropine:{pl:'siarczan atropiny',gen:['Atropini sulfatis'],nom:['Atropini sulfas']},
+ papaverine:{pl:'chlorowodorek papaweryny',gen:['Papaverini hydrochloridi'],nom:['Papaverini hydrochloridum']},
+ phenobNa:{pl:'fenobarbital sodowy',gen:['Phenobarbitali natrici','Luminali natrici'],nom:['Phenobarbitalum natricum']},
+ ichthyol:{pl:'sulfobituminian amonu (ichtiol)',gen:['Ammonii bituminosulfonatis','Ichthyoli','Ichtyoli'],nom:['Ammonii bituminosulfonas','Ichthyolum','Ichtyolum']},
+ belladonna:{pl:'suchy wyciąg z pokrzyku',gen:['Belladonnae extracti sicci','Belladonnae extracti'],nom:['Extractum Belladonnae siccum','Belladonnae extractum']},
+ resorcinol:{pl:'rezorcyna',gen:['Resorcinoli'],nom:['Resorcinolum']},
+ peru:{pl:'balsam peruwiański',gen:['Balsami peruviani'],nom:['Balsamum peruvianum']},
+ nystatin:{pl:'nystatyna',gen:['Nystatini'],nom:['Nystatinum']},
+ lactic:{pl:'kwas mlekowy',gen:['Acidi lactici'],nom:['Acidum lacticum']},
+ metronidazol:{pl:'metronidazol',gen:['Metronidazoli'],nom:['Metronidazolum']},
+ heviran:{pl:'acyklowir (Heviran)',gen:['Heviran','Acicloviri','Aciclovir'],nom:['Aciclovirum']},
+ vasAlb:{pl:'wazelina biała',gen:['Vaselini albi'],nom:['Vaselinum album']},
+ vasFlav:{pl:'wazelina żółta',gen:['Vaselini flavi'],nom:['Vaselinum flavum']},
+ lanAnh:{pl:'lanolina bezwodna',gen:['Lanolini anhydrici','Lanolini'],nom:['Lanolinum anhydricum','Lanolinum']},
+ lanHyd:{pl:'lanolina uwodniona',gen:['Lanolini hydrici'],nom:['Lanolinum hydricum']},
+ eucerin:{pl:'euceryna',gen:['Eucerini'],nom:['Eucerinum']},
+ lekobaza:{pl:'Lekobaza',gen:['Lekobazae','Lekobaza'],nom:[]},
+ hascobaza:{pl:'Hascobaza',gen:['Hascobazae','Hascobaza'],nom:[]},
+ parLiq:{pl:'parafina ciekła',gen:['Paraffini liquidi'],nom:['Paraffinum liquidum']},
+ ricin:{pl:'olej rycynowy',gen:['Ricini olei'],nom:['Ricini oleum']},
+ sulfur:{pl:'siarka strącona',gen:['Sulfuris praecipitati','Sulfuris ppt'],nom:['Sulfur praecipitatum']},
+ neomycin:{pl:'siarczan neomycyny',gen:['Neomycini sulfatis'],nom:['Neomycini sulfas','Neomycinum']},
+ hydrocort:{pl:'hydrokortyzon',gen:['Hydrocortisoni'],nom:['Hydrocortisonum']},
+ pilocarpine:{pl:'chlorowodorek pilokarpiny',gen:['Pilocarpini hydrochloridi'],nom:['Pilocarpini hydrochloridum']},
+ vehOc:{pl:'podłoże do oczu (Vehiculum pro oculis)',gen:['Vehiculi pro oculis','Vehiculi pro oculos'],nom:['Vehiculum pro oculis','Vehiculum pro oculos']},
+ glycerol:{pl:'glicerol',gen:['Glyceroli'],nom:['Glycerolum']},
+ aqua:{pl:'woda oczyszczona',gen:['Aquae purificatae','Aquae destillatae','Aquae'],nom:['Aqua purificata','Aqua destillata','Aqua']},
+ aquaOph:{pl:'woda do użytku ocznego',gen:['Aquae pro usu ophthalmico','Aquae ad usum ophthalmicum'],nom:['Aqua pro usu ophthalmico']},
+ ki:{pl:'jodek potasu',gen:['Kalii iodidi'],nom:['Kalii iodidum']},
+ kbr:{pl:'bromek potasu',gen:['Kalii bromidi'],nom:['Kalii bromidum']},
+ nabr:{pl:'bromek sodu',gen:['Natrii bromidi'],nom:['Natrii bromidum']},
+ nh4br:{pl:'bromek amonu',gen:['Ammonii bromidi'],nom:['Ammonii bromidum']},
+ thymi:{pl:'syrop tymiankowy',gen:['Thymi sirupi'],nom:['Thymi sirupus']},
+ althaeae:{pl:'syrop prawoślazowy',gen:['Althaeae sirupi'],nom:['Althaeae sirupus']},
+ pini:{pl:'syrop sosnowy',gen:['Pini sirupi'],nom:['Pini sirupus']},
+ valer:{pl:'nalewka kozłkowa',gen:['Valerianae tincturae'],nom:['Valerianae tinctura']},
+ protargol:{pl:'proteinian srebra (Protargol)',gen:['Protargoli','Argenti proteinici'],nom:['Protargolum','Argentum proteinicum']},
+ tartaric:{pl:'kwas winowy',gen:['Acidi tartarici'],nom:['Acidum tartaricum']},
+ mentha:{pl:'nalewka miętowa',gen:['Menthae piperitae tincturae'],nom:['Menthae piperitae tinctura']},
+};
+const V_PEXT=['talc','tritici','solani'], V_PINT=['lactose','sacch','calclact','tritici','solani'], V_SUPP=['cacao','witepsol'],
+      V_UNG=['vasAlb','vasFlav','lanAnh','lanHyd','eucerin','lekobaza','hascobaza','parLiq'], V_OC=['vehOc','parLiq','lanAnh','vasAlb'];
+const D=(label,...alts)=>({label,alts});
+const FREQ=n=>D(`częstotliwość (${n} x dziennie)`,String(n));
+
+// ---------- tasks (answer key) — amounts in grams; dosed tasks: amounts per single dose
+const T=[
+// PROSZKI NIEDZIELONE
+{g:'Proszki niedzielone',s:55,t:'Zapisz pacjentowi zasypkę o działaniu przeciwświądowym zawierającą 2% mentolu oraz 7% anestezyny. Dawkowanie: niewielką ilość na swędzące miejsca 2 x dziennie.',h:'Mentholum, Anaesthesinum',
+ ing:[{k:'menthol',pct:2},{k:'anaesth',pct:7}],veh:{names:V_PEXT,count:[1,2]},total:[1,160],sub:'pulv',ds:[FREQ(2),D('miejsce użycia (skóra / swędzące miejsca)','swedz','skor','zewn','miejsc')],
+ model:'Rp.\nMentholi            1,6\nAnaesthesini        5,6\nTalci            ad 80,0\nM. f. pulv.\nD.S. Zasypka. Stosować zewnętrznie, niewielką ilość na swędzące miejsca 2 x dziennie.',
+ calc:'Masa nie jest podana – przyjmij np. 1 ryczałt (80 g): 2% z 80 g = 1,6 g; 7% = 5,6 g. Liczy się stężenie procentowe.'},
+{g:'Proszki niedzielone',s:56,t:'Zapisz receptę na 50 g zasypki o działaniu przeciwzapalnym i ściągającym, zawierającą 1% kwasu taninowego i 10% kwasu borowego. Zastosuj podłoże dwuskładnikowe zmieszane w równych ilościach. Zaleć stosowanie na obszary skóry objęte stanem zapalnym, 2 x dziennie, niewielką ilość.',h:'Acidum tannicum, Acidum boricum',
+ ing:[{k:'tannic',amt:0.5},{k:'boric',amt:5}],veh:{names:V_PEXT,count:[2,2],equal:true},total:50,sub:'pulv',ds:[FREQ(2),D('miejsce użycia (skóra objęta stanem zapalnym)','zapal','skor','zewn')],
+ model:'Rp.\nAcidi tannici       0,5\nAcidi borici        5,0\nTalci\nTritici amyli aa ad 50,0\nM. f. pulv.\nD.S. Zasypka. Stosować zewnętrznie na zmienione zapalnie miejsca, niewielką ilość 2 x dziennie.',
+ calc:'1% z 50 g = 0,5 g; 10% z 50 g = 5,0 g. Podłoże: dwa składniki „aa ad 50,0” (po 22,25 g).'},
+{g:'Proszki niedzielone',s:57,t:'Zapisz proszek do płukania gardła zawierający 30 mg mentolu, po 2,5 g salicylanu sodu i benzoesanu sodu oraz 25 g wodorowęglanu sodu. Zaleć płukanie gardła 3 x dziennie po rozpuszczeniu 1 łyżeczki proszku w szklance wody. Zaznacz, że to recepta dla Twojego dziadka.',h:'Mentholum, Natrii salicylas, Natrii benzoas, Natrium bicarbonicum',
+ ing:[{k:'menthol',amt:0.03},{k:'nasal',amt:2.5},{k:'nabenz',amt:2.5},{k:'nahco3',amt:25}],veh:null,total:null,sub:'pulv',ds:[FREQ(3),D('płukanie gardła','plukac','plukan','gardl')],ann:{dop:['fam']},
+ model:'Pro familiae\nRp.\nMentholi                  0,03\nNatrii salicylatis\nNatrii benzoatis       aa 2,5\nNatrii bicarbonici       25,0\nM. f. pulv.\nD.S. 1 łyżeczkę proszku rozpuścić w szklance wody, płukać gardło 3 x dziennie.',
+ calc:'30 mg = 0,03 g. Recepta dla członka rodziny → „Pro familiae”.'},
+{g:'Proszki niedzielone',s:69,t:'Zapisz proszek niedzielony do użytku zewnętrznego zawierający zasadowy galusan bizmutu 10% i tlenek cynku 20%. Jako podłoża użyj skrobi pszenicznej i talku zmieszanych w równych częściach. Zapisz 1 jednostkę ryczałtową. Dawkowanie: zasypka, zewnętrznie, na nadmierną potliwość stóp.',h:'Bismuthi subgallas, Zinci oxydum',
+ ing:[{k:'bismuth',pct:10},{k:'zno',pct:20}],veh:{names:['tritici','talc'],count:[2,2],equal:true},total:80,sub:'pulv',ds:[D('zastosowanie (stopy / zewnętrznie)','stop','potliw','zewn')],
+ model:'Rp.\nBismuthi subgallatis     8,0\nZinci oxydi             16,0\nTritici amyli\nTalci              aa ad 80,0\nM. f. pulv.\nD.S. Zasypka do stosowania zewnętrznego na stopy.',
+ calc:'1 ryczałt proszku niedzielonego = 80 g. 10% = 8,0 g; 20% = 16,0 g.'},
+{g:'Proszki niedzielone',s:69,t:'Zapisz proszek niedzielony do płukania gardła zawierający w równych częściach chlorek sodu, wodorowęglan sodu i salicylan sodu. Zapisz 10 dawek proszku. Dawkowanie: rozpuścić 2,5 g proszku w szklance wody, płukać gardło 3 x dziennie. Recepta dla Twojej mamy.',h:'Natrii chloridum, Natrii hydrocarbonas, Natrii salicylas',
+ ing:[{k:'nacl',amt:25/3},{k:'nahco3',amt:25/3},{k:'nasal',amt:25/3}],veh:null,total:25,sub:'pulv',ds:[FREQ(3),D('ilość na płukanie (2,5 g)','2,5','2.5'),D('płukanie gardła','plukac','plukan','gardl')],ann:{dop:['fam']},
+ model:'Pro familiae\nRp.\nNatrii chloridi\nNatrii hydrocarbonatis\nNatrii salicylatis aa ad 25,0\nM. f. pulv.\nD.S. 2,5 g proszku rozpuścić w szklance wody, płukać gardło 3 x dziennie.',
+ calc:'10 dawek × 2,5 g = 25 g, po równo → „aa ad 25,0” (po ok. 8,33 g).'},
+{g:'Proszki niedzielone',s:69,t:'Zapisz proszek niedzielony do użytku zewnętrznego zawierający 5% kwasu salicylowego. Zapisz ½ jednostki ryczałtowej. Dawkowanie: zasypka, stosować zewnętrznie.',h:'Acidum salicylicum',
+ ing:[{k:'salic',pct:5}],veh:{names:V_PEXT,count:[1,2]},total:40,sub:'pulv',ds:[D('zewnętrznie / zasypka','zewn','zasyp','skor')],
+ model:'Rp.\nAcidi salicylici    2,0\nTalci           ad 40,0\nM. f. pulv.\nD.S. Zasypka. Stosować zewnętrznie.',
+ calc:'½ × 80 g = 40 g; 5% z 40 g = 2,0 g.'},
+// PROSZKI DZIELONE
+{g:'Proszki dzielone',s:61,t:'Zapisz receptę na proszki dzielone do użytku wewnętrznego zawierające metamizol w dawce jednorazowej 500 mg. Dawkowanie: 1 proszek doraźnie w razie bólu (maks. 3 proszki na dobę). Zaznacz, że recepta jest dla Ciebie.',h:'Metamizolum natricum',
+ ing:[{k:'metamizol',amt:0.5}],veh:{names:V_PINT,count:[1,1],optional:true},total:null,dosed:[1,40],sub:'pulv',ds:[D('doraźnie / w razie bólu','doraz','razie','bol'),D('maks. 3 na dobę','3')],ann:{dop:['upp']},
+ model:'Pro usu proprio\nRp.\nMetamizoli natrici  0,5\nM. f. pulv.\nd.t.d. No 20\nD.S. 1 proszek doraźnie w razie bólu, maksymalnie 3 proszki na dobę.',
+ calc:'500 mg = 0,5 g ≥ 0,1 g, więc podłoże nie jest potrzebne. Liczba proszków dowolna do 40 (1 ryczałt = 20).'},
+{g:'Proszki dzielone',s:62,t:'Zapisz receptę na proszki dzielone do użytku wewnętrznego dla noworodka zawierające cytrynian sildenafilu w dawce jednorazowej 1,5 mg. Pacjent nie toleruje laktozy. Zapisz lek na 20 dni kuracji. Dawkowanie: 2 x dziennie po 1 proszku.',h:'Sildenafili citras',
+ ing:[{k:'sildenafil',amt:0.0015}],veh:{names:['sacch','calclact','tritici','solani'],count:[1,1],forbid:{lactose:'Pacjent nie toleruje laktozy – wybierz inne podłoże (np. Saccharosi).'}},total:[0.1,1],dosed:40,sub:'pulv',ds:[FREQ(2)],
+ model:'Rp.\nSildenafili citratis  0,0015\nSaccharosi        ad 0,2\nM. f. pulv.\nd.t.d. No 40\nD.S. 1 proszek 2 x dziennie.',
+ calc:'1,5 mg = 0,0015 g < 0,1 g → dodaj podłoże (nie laktozę). 20 dni × 2 = 40 proszków.'},
+{g:'Proszki dzielone',s:63,t:'Zapisz receptę na proszki dzielone dla dziecka o masie 20 kg z zaburzeniami rytmu serca, zawierające propranolol w dawce dobowej 1 mg/kg m.c., w 4 dawkach podzielonych. Użyj gotowych tabletek Propranolol. Dawkowanie: 1 proszek 4 x dziennie.',h:'Propranolol',
+ ing:[{k:'propranolol',amt:0.005}],veh:{names:V_PINT,count:[1,1]},total:[0.1,1],dosed:[1,40],sub:'pulv',ds:[FREQ(4)],
+ model:'Rp.\nPropranolol       0,005\nLactosi       ad 0,2\nM. f. pulv.\nd.t.d. No 20\nD.S. 1 proszek 4 x dziennie.',
+ calc:'20 kg × 1 mg = 20 mg/dobę : 4 = 5 mg = 0,005 g na proszek → potrzebne podłoże.'},
+{g:'Proszki dzielone',s:64,t:'Zapisz receptę na proszki dzielone z furazydyną dla dziecka o masie 20 kg z zakażeniem układu moczowego. Dawka dobowa 6 mg/kg m.c. Użyj gotowych tabletek Furagina. Dawkowanie: 3 dawki podzielone, co 8 godzin. Zapisz proszki na 7 dni.',h:'Furagina',
+ ing:[{k:'furagina',amt:0.04}],veh:{names:V_PINT,count:[1,1]},total:[0.1,1],dosed:21,sub:'pulv',ds:[D('co 8 godzin / 3 x dziennie','8','3')],
+ model:'Rp.\nFuragina          0,04\nLactosi       ad 0,2\nM. f. pulv.\nd.t.d. No 21\nD.S. 1 proszek co 8 godzin.',
+ calc:'20 kg × 6 mg = 120 mg/dobę : 3 = 40 mg = 0,04 g. 7 dni × 3 = 21 proszków.'},
+{g:'Proszki dzielone',s:67,t:'Zapisz receptę na proszki dzielone do użytku wewnętrznego zawierające kodeinę (d.j. 80 mg) i paracetamol (500 mg). Dawkowanie: 1 proszek co 6 godzin. Zapisz proszki na 5 dni. Dawki max kodeiny wg FP XI: jednorazowa 60 mg, dobowa 240 mg.',h:'Codeini phosphas, Paracetamolum',
+ ing:[{k:'codeine',amt:0.08},{k:'paracetamol',amt:0.5}],veh:{names:V_PINT,count:[1,1],optional:true},total:null,dosed:20,sub:'pulv',ds:[D('co 6 godzin','6')],ann:{slow:true,excl:true},
+ model:'Rp.\nCodeini phosphatis  0,08! (osiem setnych)\nParacetamoli        0,5\nM. f. pulv.\nd.t.d. No 20\nD.S. 1 proszek co 6 godzin.\n+ podpis przy przekroczonej dawce',
+ calc:'Kodeina II-N → zwykła recepta + słowne powtórzenie. 80 mg > 60 mg (jednorazowa) i 4 × 80 = 320 mg > 240 mg → wykrzyknik, dawka słownie, podpis. 4 proszki/dobę × 5 dni = 20.'},
+{g:'Proszki dzielone',s:68,t:'Zapisz receptę na proszki dzielone do użytku wewnętrznego zawierające morfinę w dawce jednorazowej 20 mg. Zapisz 1 jednostkę ryczałtową. Dawkowanie: 1 proszek co 4 godziny. Dawki max morfiny wg FP XI: jednorazowa 100 mg, dobowa 100 mg.',h:'Morphini hydrochloridum',
+ ing:[{k:'morphine',amt:0.02}],veh:{names:V_PINT,count:[1,1]},total:[0.1,1],dosed:20,sub:'pulv',ds:[D('co 4 godziny','4')],ann:{rx:'Rpw',slow:true,excl:true},
+ model:'Rpw\nRp.\nMorphini hydrochloridi  0,02! (dwie setne)\nLactosi             ad 0,2\nM. f. pulv.\nd.t.d. No 20 (dwadzieścia)\nD.S. 1 proszek co 4 godziny.',
+ calc:'Morfina I-N → Rpw + słownie. 6 × 20 mg = 120 mg/dobę > 100 mg → wykrzyknik. 0,02 g < 0,1 g → podłoże. 1 ryczałt = 20 proszków.'},
+{g:'Proszki dzielone',s:70,t:'Zapisz receptę na proszki dzielone do użytku wewnętrznego zawierające paracetamol (d.j. 0,5) i kwas acetylosalicylowy (d.j. 0,3). Zapisz proszki na 7 dni. Dawkowanie: 1 proszek 3 x dziennie.',h:'Paracetamolum, Acidum acetylsalicylicum',
+ ing:[{k:'paracetamol',amt:0.5},{k:'asa',amt:0.3}],veh:{names:V_PINT,count:[1,1],optional:true},total:null,dosed:21,sub:'pulv',ds:[FREQ(3)],
+ model:'Rp.\nParacetamoli               0,5\nAcidi acetylsalicylici     0,3\nM. f. pulv.\nd.t.d. No 21\nD.S. 1 proszek 3 x dziennie.',
+ calc:'7 dni × 3 = 21 proszków. Masa > 0,1 g – bez podłoża.'},
+{g:'Proszki dzielone',s:70,t:'Zapisz dla 4-letniego dziecka z zapaleniem oskrzeli proszki „krakowskie” zawierające w dawkach jednorazowych: chlorowodorek efedryny 2 mg, prometazynę 2 mg (użyj leku Diphergan) i mleczan wapnia 300 mg. Dawkowanie: 1 proszek 2 x dziennie; zapisz proszki na 5 dni.',h:'Ephedrini hydrochloridum, Diphergan, Calcii lactas',
+ ing:[{k:'ephedrine',amt:0.002},{k:'diphergan',amt:0.002},{k:'calclact',amt:0.3}],veh:{names:['lactose','sacch','tritici','solani'],count:[1,1],optional:true},total:null,dosed:10,sub:'pulv',ds:[FREQ(2)],
+ model:'Rp.\nEphedrini hydrochloridi   0,002\nDiphergan                 0,002\nCalcii lactatis           0,3\nM. f. pulv.\nd.t.d. No 10\nD.S. 1 proszek 2 x dziennie.',
+ calc:'5 dni × 2 = 10 proszków. Mleczan wapnia daje masę > 0,1 g.'},
+// CZOPKI
+{g:'Czopki doodbytnicze',s:79,t:'Zapisz receptę na czopki doodbytnicze z paracetamolem dla dziecka o masie 7 kg. Dawka jednorazowa paracetamolu: 10 mg/kg. Dawkowanie: 1 czopek co 6 godzin. Zapisz czopki na 3 doby.',h:'Paracetamolum',
+ ing:[{k:'paracetamol',amt:0.07}],veh:{names:V_SUPP,count:[1,1]},total:1,qs:true,dosed:12,sub:'supp',ds:[D('co 6 godzin','6')],
+ model:'Rp.\nParacetamoli    0,07\nCacao olei      q.s.\nM. f. supp. anale\nd.t.d. No 12\nD.S. 1 czopek doodbytniczo co 6 godzin.',
+ calc:'7 kg × 10 mg = 70 mg = 0,07 g. 4 czopki/dobę × 3 = 12. Czopek o działaniu ogólnym → można q.s. (lub ad 1,0 – dziecko).'},
+{g:'Czopki doodbytnicze',s:81,t:'Zapisz receptę na 1 ryczałt czopków przeciw hemoroidom zawierających 10% zasadowego galusanu bizmutu, 5% tlenku cynku oraz 7,5% taniny. Zaleć 1 czopek na noc. Zaznacz realizację recepty od 30.11.2026.',h:'Bismuthi subgallas (Dermatolum), Zinci oxydum, Tanninum',
+ ing:[{k:'bismuth',pct:10},{k:'zno',pct:5},{k:'tannic',pct:7.5}],veh:{names:V_SUPP,count:[1,1]},total:2,dosed:12,sub:'supp',ds:[D('na noc','noc','wiecz','snem')],ann:{real:true},
+ model:'Realizacja od: 30.11.2026\nRp.\nBismuthi subgallatis   0,2\nZinci oxydi            0,1\nTannini                0,15\nCacao olei         ad 2,0\nM. f. supp. anale\nd.t.d. No 12\nD.S. 1 czopek doodbytniczo na noc.',
+ calc:'Czopek dla dorosłego = 2 g: 10% = 0,2 g; 5% = 0,1 g; 7,5% = 0,15 g. Działanie miejscowe → NIE q.s., podłoże „ad 2,0”. 1 ryczałt = 12 czopków.'},
+{g:'Czopki doodbytnicze',s:82,t:'Zapisz receptę na czopki doodbytnicze dla dorosłego zawierające atropinę (0,5 mg) i papawerynę (40 mg). Dawkowanie: 1 czopek 2 x dziennie.',h:'Atropini sulfas, Papaverini hydrochloridum',
+ ing:[{k:'atropine',amt:0.0005},{k:'papaverine',amt:0.04}],veh:{names:V_SUPP,count:[1,1]},total:2,qs:true,dosed:[1,24],sub:'supp',ds:[FREQ(2)],
+ model:'Rp.\nAtropini sulfatis          0,0005\nPapaverini hydrochloridi   0,04\nCacao olei                 q.s.\nM. f. supp. anale\nd.t.d. No 12\nD.S. 1 czopek doodbytniczo 2 x dziennie.',
+ calc:'0,5 mg = 0,0005 g; 40 mg = 0,04 g. Działanie ogólne → q.s. albo ad 2,0. Liczba czopków dowolna do 24.'},
+{g:'Czopki doodbytnicze',s:82,t:'Zapisz dla 30-letniej kobiety z bolesnymi miesiączkami czopki doodbytnicze zawierające 750 mg metamizolu i 30 mg fenobarbitalu. Zapisz czopki na 6 dni. Dawkowanie: 1 czopek przed snem.',h:'Metamizolum natricum, Phenobarbitalum natricum',
+ ing:[{k:'metamizol',amt:0.75},{k:'phenobNa',amt:0.03}],veh:{names:V_SUPP,count:[1,1]},total:2,qs:true,dosed:6,sub:'supp',ds:[D('przed snem','snem','noc','wiecz')],ann:{slow:true},
+ model:'Rp.\nMetamizoli natrici       0,75\nPhenobarbitali natrici   0,03 (trzy setne)\nCacao olei               q.s.\nM. f. supp. anale\nd.t.d. No 6\nD.S. 1 czopek doodbytniczo przed snem.',
+ calc:'Fenobarbital IV-P → zwykła recepta + słowne powtórzenie ilości. 6 dni × 1 = 6 czopków.'},
+{g:'Czopki doodbytnicze',s:82,t:'Zapisz receptę na czopki doodbytnicze zawierające sulfobituminian amonu 15% i 20 mg suchego wyciągu z pokrzyku wilczej jagody. Zapisz 1 jednostkę ryczałtową. Dawkowanie: 1 czopek 2 x dziennie.',h:'Ammonii bituminosulfonas, Extractum Belladonnae siccum',
+ ing:[{k:'ichthyol',pct:15},{k:'belladonna',amt:0.02}],veh:{names:V_SUPP,count:[1,1]},total:2,dosed:12,sub:'supp',ds:[FREQ(2)],
+ model:'Rp.\nAmmonii bituminosulfonatis   0,3\nBelladonnae extracti sicci   0,02\nCacao olei               ad 2,0\nM. f. supp. anale\nd.t.d. No 12\nD.S. 1 czopek doodbytniczo 2 x dziennie.',
+ calc:'15% z 2 g = 0,3 g. Stężenie % wymaga określonej masy → ad 2,0 (nie q.s.).'},
+{g:'Czopki doodbytnicze',s:82,t:'Zapisz receptę na czopki doodbytnicze zawierające 10% zasadowego galusanu bizmutu, 5% tlenku cynku, 2% rezorcyny i 5% balsamu peruwiańskiego. Dawkowanie: 1 czopek wieczorem. Zapisz ¼ maksymalnej liczby czopków, jaką można zapisać na 1 recepcie.',h:'Bismuthi subgallas, Zinci oxydum, Resorcinolum, Balsamum peruvianum',
+ ing:[{k:'bismuth',pct:10},{k:'zno',pct:5},{k:'resorcinol',pct:2},{k:'peru',pct:5}],veh:{names:V_SUPP,count:[1,1]},total:2,dosed:6,sub:'supp',ds:[D('wieczorem','wiecz','noc')],
+ model:'Rp.\nBismuthi subgallatis   0,2\nZinci oxydi            0,1\nResorcinoli            0,04\nBalsami peruviani      0,1\nCacao olei         ad 2,0\nM. f. supp. anale\nd.t.d. No 6\nD.S. 1 czopek doodbytniczo wieczorem.',
+ calc:'Max 24 czopki → ¼ = 6. Czopek 2 g: 10% = 0,2; 5% = 0,1; 2% = 0,04; 5% = 0,1.'},
+// GLOBULKI
+{g:'Globulki dopochwowe',s:85,t:'Zapisz receptę na globulki dopochwowe zawierające nystatynę 100 000 j.m./1 g oraz kwas mlekowy 1%. Dawkowanie: 1 globulka na noc. Zapisz globulki na 12 dni. Zaznacz konieczność pilnej realizacji recepty.',h:'Nystatinum, Acidum lacticum',
+ ing:[{k:'nystatin',iu:300000},{k:'lactic',pct:1}],veh:{names:V_SUPP,count:[1,1]},total:3,dosed:12,sub:'glob',ds:[D('na noc','noc','wiecz')],ann:{dop:['cito']},
+ model:'Cito!\nRp.\nNystatini       300 000 j.m.\nAcidi lactici       0,03\nCacao olei      ad 3,0\nM. f. glob. vag.\nd.t.d. No 12\nD.S. 1 globulka dopochwowo na noc.',
+ calc:'Globulka = 3 g → nystatyna 3 × 100 000 = 300 000 j.m.; 1% z 3 g = 0,03 g. 12 dni × 1 = 12.'},
+{g:'Globulki dopochwowe',s:86,t:'Zapisz receptę na globulki dopochwowe zawierające cytrynian sildenafilu w dawce jednorazowej 35 mg. Masło kakaowe zastąp podłożem Witepsol H15. Dawkowanie: 1 globulka raz dziennie. Zapisz 1 ryczałt.',h:'Sildenafili citras',
+ ing:[{k:'sildenafil',amt:0.035}],veh:{names:['witepsol'],count:[1,1],forbid:{cacao:'Zadanie każe zastąpić masło kakaowe Witepsolem H15.'}},total:3,dosed:12,sub:'glob',ds:[D('raz dziennie','1','raz')],
+ model:'Rp.\nSildenafili citratis   0,035\nWitepsol H15       ad 3,0\nM. f. glob. vag.\nd.t.d. No 12\nD.S. 1 globulka dopochwowo raz dziennie.',
+ calc:'35 mg = 0,035 g; globulka 3 g; 1 ryczałt = 12.'},
+{g:'Globulki dopochwowe',s:87,t:'Zapisz receptę na globulki dopochwowe zawierające 0,2 g acyklowiru (użyj leku Heviran) i kwas borny 2%. Zapisz globulki na 10 dni. Dawkowanie: 1 globulka 1 x dziennie (na noc).',h:'Heviran, Acidum boricum',
+ ing:[{k:'heviran',amt:0.2},{k:'boric',pct:2}],veh:{names:V_SUPP,count:[1,1]},total:3,dosed:10,sub:'glob',ds:[D('na noc','noc','wiecz')],
+ model:'Rp.\nHeviran           0,2\nAcidi borici      0,06\nCacao olei    ad 3,0\nM. f. glob. vag.\nd.t.d. No 10\nD.S. 1 globulka dopochwowo na noc.',
+ calc:'2% z 3 g = 0,06 g. 10 dni × 1 = 10.'},
+{g:'Globulki dopochwowe',s:87,t:'Zapisz dla 20-letniej kobiety globulki dopochwowe zawierające nystatynę w dawce jednorazowej 100 000 j.m., metronidazol 0,25 g i kwas mlekowy 0,5%. Zapisz globulki na 10 dni. Dawkowanie: 1 globulka wieczorem.',h:'Nystatinum, Metronidazolum, Acidum lacticum',
+ ing:[{k:'nystatin',iu:100000},{k:'metronidazol',amt:0.25},{k:'lactic',pct:0.5}],veh:{names:V_SUPP,count:[1,1]},total:3,dosed:10,sub:'glob',ds:[D('wieczorem','wiecz','noc')],
+ model:'Rp.\nNystatini        100 000 j.m.\nMetronidazoli        0,25\nAcidi lactici        0,015\nCacao olei       ad 3,0\nM. f. glob. vag.\nd.t.d. No 10\nD.S. 1 globulka dopochwowo wieczorem.',
+ calc:'0,5% z 3 g = 0,015 g. 10 dni × 1 = 10.'},
+// MAŚCI, PASTY
+{g:'Maści i pasty',s:98,t:'Zapisz 50 g maści dla dorosłego o składzie: kwas salicylowy 1%, rezorcyna 2%. Dawkowanie: zewnętrznie, niewielką ilość, 3 x dziennie.',h:'Acidum salicylicum, Resorcinolum',
+ ing:[{k:'salic',pct:1},{k:'resorcinol',pct:2}],veh:{names:V_UNG,count:[1,2]},total:50,sub:'ung',ds:[FREQ(3),D('zewnętrznie','zewn','skor','smar')],
+ model:'Rp.\nAcidi salicylici    0,5\nResorcinoli         1,0\nVaselini albi   ad 50,0\nM. f. ung.\nD.S. Stosować zewnętrznie, niewielką ilość 3 x dziennie.',
+ calc:'1% z 50 g = 0,5 g; 2% = 1,0 g.'},
+{g:'Maści i pasty',s:100,t:'Zapisz maść na odmrożenia zawierającą balsam peruwiański i olej rycynowy po 10%. Zapisz ½ maksymalnej ilości maści, jaką można zapisać na 1 recepcie. Użyj podłoża dwuskładnikowego. Dawkowanie: zewnętrznie, 2 x dziennie, niewielką ilość.',h:'Balsamum peruvianum, Ricini oleum',
+ ing:[{k:'peru',pct:10},{k:'ricin',pct:10}],veh:{names:V_UNG,count:[2,2]},total:500,sub:'ung',ds:[FREQ(2)],
+ model:'Rp.\nBalsami peruviani\nRicini olei          aa 50,0\nVaselini flavi\nLanolini anhydrici aa ad 500,0\nM. f. ung.\nD.S. Stosować zewnętrznie na odmrożone miejsca, niewielką ilość 2 x dziennie.',
+ calc:'Max maści = 1000 g → ½ = 500 g. 10% = 50 g każdego.'},
+{g:'Maści i pasty',s:102,t:'Zapisz 50 g pasty zawierającej 30% tlenku cynku. Dawkowanie: zewnętrznie, 2 x dziennie, niewielką ilość. Zaznacz, że recepta jest dla Ciebie.',h:'Zinci oxydum',
+ ing:[{k:'zno',pct:30}],veh:{names:V_UNG,count:[1,2]},total:50,sub:'pasta',ds:[FREQ(2)],ann:{dop:['upp']},
+ model:'Pro usu proprio\nRp.\nZinci oxydi        15,0\nVaselini albi  ad 50,0\nM. f. pasta\nD.S. Stosować zewnętrznie, niewielką ilość 2 x dziennie.',
+ calc:'30% z 50 g = 15,0 g (pasta właściwa: 30–60% substancji stałych).'},
+{g:'Maści i pasty',s:112,t:'Zapisz maść do stosowania na skórę zawierającą sulfobituminian amonu 10%. Jako podłoża użyj wazeliny żółtej i lanoliny bezwodnej w równych częściach. Zapisz 100 g maści. Dawkowanie: zewnętrznie, smarować zmiany 2 x dziennie.',h:'Ammonii bituminosulfonas (Ichtyolum)',
+ ing:[{k:'ichthyol',pct:10}],veh:{names:['vasFlav','lanAnh'],count:[2,2],equal:true},total:100,sub:'ung',ds:[FREQ(2)],
+ model:'Rp.\nAmmonii bituminosulfonatis   10,0\nVaselini flavi\nLanolini anhydrici       aa ad 100,0\nM. f. ung.\nD.S. Stosować zewnętrznie, smarować zmiany skórne 2 x dziennie.',
+ calc:'10% ze 100 g = 10,0 g; podłoże aa ad 100,0 (po 45 g).'},
+{g:'Maści i pasty',s:112,t:'Zapisz maść z kwasem salicylowym 5%, rezorcyną 4% i siarką strąconą 10% na bazie wazeliny, dla pacjenta z trądzikiem uczulonego na wazelinę żółtą. Zapisz ½ ilości ryczałtowej. Dawkowanie: zewnętrznie, smarować zmiany 2 x dziennie.',h:'Acidum salicylicum, Resorcinolum, Sulfur praecipitatum',
+ ing:[{k:'salic',pct:5},{k:'resorcinol',pct:4},{k:'sulfur',pct:10}],veh:{names:['vasAlb'],count:[1,1],forbid:{vasFlav:'Pacjent jest uczulony na wazelinę żółtą – użyj białej.'}},total:50,sub:'ung',ds:[FREQ(2)],
+ model:'Rp.\nAcidi salicylici          2,5\nResorcinoli               2,0\nSulfuris praecipitati     5,0\nVaselini albi         ad 50,0\nM. f. ung.\nD.S. Stosować zewnętrznie, smarować zmiany skórne 2 x dziennie.',
+ calc:'Ryczałt maści 100 g → ½ = 50 g. 5% = 2,5; 4% = 2,0; 10% = 5,0.'},
+{g:'Maści i pasty',s:112,t:'Zapisz dla pacjenta z nieżytem nosa maść do nosa z efedryną 1% i mentolem 0,3%. Dawkowanie: zewnętrznie, niewielką ilość do każdego otworu nosowego 3 x dziennie.',h:'Ephedrini hydrochloridum, Mentholum',
+ ing:[{k:'ephedrine',pct:1},{k:'menthol',pct:0.3}],veh:{names:V_UNG,count:[1,2]},total:[1,20],sub:'ung',ds:[FREQ(3),D('do nosa','nos')],
+ model:'Rp.\nEphedrini hydrochloridi   0,1\nMentholi                  0,03\nEucerini              ad 10,0\nM. f. ung.\nD.S. Niewielką ilość do każdego otworu nosowego 3 x dziennie.',
+ calc:'Maść do nosa: 10 g (ryczałt), max 20 g. Przy 10 g: 1% = 0,1 g; 0,3% = 0,03 g. Podłoże absorpcyjne (np. euceryna).'},
+{g:'Maści i pasty',s:109,t:'Zapisz receptę na maść do oczu zawierającą neomycynę 0,5% i hydrokortyzon 1%. Dawkowanie: niewielką ilość do worka spojówkowego co 6 godzin przez 14 dni.',h:'Neomycini sulfas, Hydrocortisonum',
+ ing:[{k:'neomycin',pct:0.5},{k:'hydrocort',pct:1}],veh:{names:V_OC,count:[1,3]},total:[1,20],sub:'ungoph',ds:[D('co 6 godzin','6'),D('worek spojówkowy','spojowk','worka','ok')],
+ model:'Rp.\nNeomycini sulfatis       0,05\nHydrocortisoni           0,1\nVehiculi pro oculis  ad 10,0\nM. f. ung. ophth.\nD.S. Niewielką ilość do worka spojówkowego co 6 godzin przez 14 dni.',
+ calc:'Maść do oczu: 10 g (ryczałt), max 20 g. Przy 10 g: 0,5% = 0,05 g; 1% = 0,1 g.'},
+{g:'Maści i pasty',s:113,t:'Zapisz dla 60-letniej kobiety chorej na jaskrę maść do oczu z pilokarpiną 2%. Dawkowanie: zewnętrznie, niewielką ilość do worka spojówkowego 3 x dziennie.',h:'Pilocarpini hydrochloridum',
+ ing:[{k:'pilocarpine',pct:2}],veh:{names:V_OC,count:[1,3]},total:[1,20],sub:'ungoph',ds:[FREQ(3),D('worek spojówkowy','spojowk','worka','ok')],
+ model:'Rp.\nPilocarpini hydrochloridi   0,2\nVehiculi pro oculis     ad 10,0\nM. f. ung. ophth.\nD.S. Niewielką ilość do worka spojówkowego 3 x dziennie.',
+ calc:'Przy 10 g: 2% = 0,2 g.'},
+{g:'Maści i pasty',s:149,t:'Zapisz maść oczną (1 ryczałt) do leczenia zakażenia rogówki, zawierającą 1% siarczanu neomycyny. Dawkowanie: niewielką ilość do worka spojówkowego co 6 godzin.',h:'Neomycini sulfas',
+ ing:[{k:'neomycin',pct:1}],veh:{names:V_OC,count:[1,3]},total:10,sub:'ungoph',ds:[D('co 6 godzin','6')],
+ model:'Rp.\nNeomycini sulfatis       0,1\nVehiculi pro oculis  ad 10,0\nM. f. ung. ophth.\nD.S. Niewielką ilość do worka spojówkowego co 6 godzin.',
+ calc:'1 ryczałt maści do oczu = 10 g; 1% = 0,1 g.'},
+// ROZTWORY
+{g:'Roztwory i mikstury',s:125,t:'Zapisz płynny lek do użytku wewnętrznego, do dawkowania miarką 15 ml, zawierający jodek potasu d.p.d. 300 mg, benzoesan sodu d.p.d. 500 mg i syrop tymiankowy w ilości 1/3 masy całego leku. Dawkowanie: 1 dawka 3 x dziennie. Zapisz 10 dawek. Recepta dla Twojej siostry.',h:'Kalii iodidum, Natrii benzoas',
+ ing:[{k:'ki',amt:3},{k:'nabenz',amt:5},{k:'thymi',amt:50}],veh:{names:['aqua'],count:[1,1]},total:150,sub:'sol',ds:[FREQ(3),D('miarka 15 ml / łyżka','15','lyzk')],ann:{dop:['fam']},
+ model:'Pro familiae\nRp.\nKalii iodidi              3,0\nNatrii benzoatis          5,0\nThymi sirupi             50,0\nAquae purificatae    ad 150,0\nM. f. mixt.\nD.S. 1 łyżka (15 ml) 3 x dziennie.',
+ calc:'10 × 15 ml = 150 g. KI 0,3 × 10 = 3,0; benzoesan 0,5 × 10 = 5,0; syrop ⅓ × 150 = 50,0.'},
+{g:'Roztwory i mikstury',s:126,t:'Zapisz roztwór do dawkowania po 5 ml, zawierający bromek potasu, bromek sodu i bromek amonu – każdy d.p.d. 100 mg. Zapisz roztwór na 5 dni. Dawkowanie: 3 x dziennie.',h:'Kalii bromidum, Natrii bromidum, Ammonii bromidum',
+ ing:[{k:'kbr',amt:1.5},{k:'nabr',amt:1.5},{k:'nh4br',amt:1.5}],veh:{names:['aqua'],count:[1,1]},total:75,sub:'sol',ds:[FREQ(3),D('5 ml / łyżeczka','5','lyzecz')],
+ model:'Rp.\nKalii bromidi\nNatrii bromidi\nAmmonii bromidi      aa 1,5\nAquae purificatae ad 75,0\nM. f. sol.\nD.S. 5 ml (łyżeczka) 3 x dziennie.',
+ calc:'5 dni × 3 = 15 dawek. Każdy bromek 0,1 × 15 = 1,5 g. Woda 15 × 5 ml = 75 g.'},
+{g:'Roztwory i mikstury',s:127,t:'Zapisz 60 g mieszanki uspokajającej zawierającej w dawce jednorazowej: bromek sodu i bromek potasu po 300 mg, bromek amonu 150 mg, sól sodową fenobarbitalu 20 mg oraz nalewkę kozłkową w ilości całkowitej 10 g. Dawkowanie: 5 ml 3 x dziennie.',h:'Kalii bromidum, Natrii bromidum, Ammonii bromidum, Phenobarbitalum natricum, Valerianae tinctura',
+ ing:[{k:'nabr',amt:3.6},{k:'kbr',amt:3.6},{k:'nh4br',amt:1.8},{k:'phenobNa',amt:0.24},{k:'valer',amt:10}],veh:{names:['aqua'],count:[1,1]},total:60,sub:'sol',ds:[FREQ(3),D('5 ml','5','lyzecz')],ann:{slow:true},
+ model:'Rp.\nNatrii bromidi\nKalii bromidi            aa 3,6\nAmmonii bromidi             1,8\nPhenobarbitali natrici      0,24 (dwadzieścia cztery setne)\nValerianae tincturae       10,0\nAquae purificatae       ad 60,0\nM. f. mixt.\nD.S. 5 ml 3 x dziennie.',
+ calc:'60 g : 5 ml = 12 dawek. 0,3 × 12 = 3,6; 0,15 × 12 = 1,8; 0,02 × 12 = 0,24. Fenobarbital IV-P → słownie.'},
+{g:'Roztwory i mikstury',s:128,t:'Zapisz miksturę wykrztuśną do dawkowania miarką 15 ml, zawierającą jodek potasu d.p.d. 300 mg i benzoesan sodu d.p.d. 0,5 g. Dodaj corrigens o działaniu wykrztuśnym. Dawkowanie: 1 dawka 3 x dziennie, do godziny 16.00. Zapisz 10 dawek.',h:'Kalii iodidum, Natrii benzoas',
+ ing:[{k:'ki',amt:3},{k:'nabenz',amt:5},{k:['thymi','althaeae','pini'],pctR:[10,20],pl:'syrop wykrztuśny (corrigens)'}],veh:{names:['aqua'],count:[1,1]},total:150,sub:'sol',ds:[FREQ(3),D('do godziny 16','16')],
+ model:'Rp.\nKalii iodidi              3,0\nNatrii benzoatis          5,0\nThymi sirupi             20,0\nAquae purificatae    ad 150,0\nM. f. mixt.\nD.S. 1 łyżka (15 ml) 3 x dziennie, do godziny 16.00.',
+ calc:'150 g leku; corrigens 10–20% masy = 15–30 g syropu tymiankowego/sosnowego/prawoślazowego.'},
+{g:'Roztwory i mikstury',s:149,t:'Zapisz dla Twojego dziadka płynny lek do użytku wewnętrznego zawierający kwas winowy w dawce jednorazowej 750 mg oraz nalewkę miętową w dawce jednorazowej 30 mg. Dawkowanie: 3 x dziennie po 15 ml. Zapisz lek na 4 dni.',h:'Acidum tartaricum, Tinctura Menthae piperitae',
+ ing:[{k:'tartaric',amt:9},{k:'mentha',amt:0.36}],veh:{names:['aqua'],count:[1,1]},total:180,sub:'sol',ds:[FREQ(3),D('15 ml','15','lyzk')],ann:{dop:['fam']},
+ model:'Pro familiae\nRp.\nAcidi tartarici                 9,0\nMenthae piperitae tincturae     0,36\nAquae purificatae          ad 180,0\nM. f. sol.\nD.S. 15 ml (łyżka) 3 x dziennie.',
+ calc:'4 dni × 3 = 12 dawek × 15 ml = 180 g. 0,75 × 12 = 9,0; 0,03 × 12 = 0,36.'},
+{g:'Roztwory i mikstury',s:148,t:'Zapisz roztwór do użytku wewnętrznego w ilości 18 g zawierający chlorowodorek morfiny. Zapisz lek na 3 doby. Dawkowanie: co 4 godziny dawka jednorazowa 5 mg morfiny.',h:'Morphini hydrochloridum',
+ ing:[{k:'morphine',amt:0.09}],veh:{names:['aqua'],count:[1,1]},total:18,sub:'sol',ds:[D('co 4 godziny','4'),D('1 ml','1 ml','1ml','1,0')],ann:{rx:'Rpw',slow:true},
+ model:'Rpw\nRp.\nMorphini hydrochloridi   0,09 (dziewięć setnych)\nAquae purificatae    ad 18,0\nM. f. sol.\nD.S. 1 ml roztworu co 4 godziny.',
+ calc:'6 dawek/dobę × 3 = 18 dawek; 18 g : 18 = 1 ml na dawkę. Morfina 0,005 × 18 = 0,09 g. I-N → Rpw + słownie.'},
+{g:'Roztwory i mikstury',s:145,t:'Zapisz 50 g roztworu z nystatyną na bazie glicerolu, do pędzlowania jamy ustnej, zawierającego 100 000 j.m. nystatyny w 1 g. Dawkowanie: niewielką ilość, 3 x dziennie.',h:'Nystatinum',
+ ing:[{k:'nystatin',iu:5000000}],veh:{names:['glycerol'],count:[1,1]},total:50,sub:'sol',ds:[FREQ(3),D('pędzlowanie jamy ustnej','pedzl','jam','ust')],
+ model:'Rp.\nNystatini      5 000 000 j.m.\nGlyceroli          ad 50,0\nM. f. sol.\nD.S. Pędzlować jamę ustną niewielką ilością 3 x dziennie.',
+ calc:'50 g × 100 000 j.m. = 5 000 000 j.m.'},
+// KROPLE
+{g:'Krople',s:133,t:'Zapisz roztwór do użytku wewnętrznego, do dawkowania kroplami, zawierający kodeinę w dawce jednorazowej 30 mg. Zapisz 1 ryczałt. Dawkowanie: 1 dawka co 6 godzin.',h:'Codeini phosphas',
+ ing:[{k:'codeine',amtR:[1.2,2.4]}],veh:{names:['aqua'],count:[1,1]},total:40,sub:'gtt',ds:[D('co 6 godzin','6'),D('liczba kropli','kropl')],ann:{slow:true},
+ model:'Rp.\nCodeini phosphatis   1,2 (jeden i dwie dziesiąte)\nAquae purificatae ad 40,0\nM. f. gtt.\nD.S. 20 kropli co 6 godzin.',
+ calc:'1 ryczałt kropli = 40 g. Dawka w 20 kroplach = 1 g → 40 dawek × 0,03 = 1,2 g (w 10 kroplach → 80 dawek → 2,4 g). Kodeina II-N → słownie.'},
+{g:'Krople',s:148,t:'Zapisz roztwór do użytku wewnętrznego, do dawkowania kroplami, zawierający kodeinę (d.p.d. 20 mg) i papawerynę (d.p.d. 40 mg). Dawkę zawrzyj w 15 kroplach. Dawkowanie: 4 x dziennie przez 5 dni.',h:'Codeini phosphas, Papaverini hydrochloridum',
+ ing:[{k:'codeine',amt:0.4},{k:'papaverine',amt:0.8}],veh:{names:['aqua'],count:[1,1]},total:15,sub:'gtt',ds:[FREQ(4),D('15 kropli','15')],ann:{slow:true},
+ model:'Rp.\nCodeini phosphatis          0,4 (cztery dziesiąte)\nPapaverini hydrochloridi    0,8\nAquae purificatae       ad 15,0\nM. f. gtt.\nD.S. 15 kropli 4 x dziennie przez 5 dni.',
+ calc:'20 dawek; 15 kropli wodnych = 0,75 g → 20 × 0,75 = 15 g. Kodeina 0,02 × 20 = 0,4; papaweryna 0,04 × 20 = 0,8.'},
+{g:'Krople',s:149,t:'Zapisz roztwór ad usum internum z kodeiną w dawce jednorazowej 0,1 g, tak aby dawka była zawarta w 20 kroplach. Dawkowanie: 3 x dziennie przez 5 dni, w leczeniu silnego bólu.',h:'Codeini phosphas',
+ ing:[{k:'codeine',amt:1.5}],veh:{names:['aqua'],count:[1,1]},total:15,sub:'gtt',ds:[FREQ(3),D('20 kropli','20')],ann:{slow:true,excl:true},
+ model:'Rp.\nCodeini phosphatis   1,5! (jeden i pięć dziesiątych)\nAquae purificatae ad 15,0\nM. f. gtt.\nD.S. 20 kropli 3 x dziennie przez 5 dni.\n+ podpis przy przekroczonej dawce',
+ calc:'15 dawek × 1 g (20 kropli) = 15 g; kodeina 0,1 × 15 = 1,5 g. 100 mg > 60 mg i 300 mg/dobę > 240 mg → wykrzyknik, słownie, podpis.'},
+{g:'Krople',s:138,t:'Zapisz 10 g kropli do ucha zawierających proteinian srebra (Protargol) 2%. Jako podłoża użyj glicerolu. Dawkowanie: 2 krople 2 x dziennie.',h:'Protargolum (Argenti proteinicum)',
+ ing:[{k:'protargol',pct:2}],veh:{names:['glycerol'],count:[1,1]},total:10,sub:'gttot',ds:[FREQ(2),D('liczba kropli','kropl')],
+ model:'Rp.\nProtargoli         0,2\nGlyceroli      ad 10,0\nM. f. gtt. otolog.\nD.S. 2 krople do ucha 2 x dziennie.',
+ calc:'2% z 10 g = 0,2 g.'},
+{g:'Krople',s:142,t:'Zapisz receptę magistralną na krople do oczu zawierające 1% roztwór siarczanu atropiny. Dawkowanie: do worka spojówkowego 1 kroplę 3 x dziennie.',h:'Atropini sulfas',
+ ing:[{k:'atropine',pct:1}],veh:{names:['aquaOph'],count:[1,1]},total:[1,20],sub:'gttoph',ds:[FREQ(3),D('kropla','kropl')],
+ model:'Rp.\nAtropini sulfatis                 0,1\nAquae pro usu ophthalmico     ad 10,0\nM. f. gtt. ophth.\nD.S. 1 kropla do worka spojówkowego 3 x dziennie.',
+ calc:'Krople do oczu: 10 g (ryczałt), max 20 g. Przy 10 g: 1% = 0,1 g.'},
+{g:'Krople',s:144,t:'Zapisz receptę magistralną na krople do oczu bez dodatku środka konserwującego, zawierające 0,1% roztwór siarczanu atropiny. Dawkowanie: 1 kropla 2 x dziennie.',h:'Atropini sulfas',
+ ing:[{k:'atropine',pct:0.1}],veh:{names:['aquaOph'],count:[1,1]},total:[1,20],sub:'gttoph',ds:[FREQ(2)],ann:{dop:['sine']},
+ model:'Sine conservantia!\nRp.\nAtropini sulfatis                 0,01\nAquae pro usu ophthalmico     ad 10,0\nM. f. gtt. ophth.\nD.S. 1 kropla do worka spojówkowego 2 x dziennie.',
+ calc:'Przy 10 g: 0,1% = 0,01 g. Bez konserwantu → „Sine conservantia”.'},
+];
+
+// ---------- helpers
+const deacc=s=>s.toLowerCase().replace(/ł/g,'l').normalize('NFD').replace(/[̀-ͯ]/g,'');
+const key=s=>deacc(s).replace(/[.,;:()!]/g,' ').replace(/y/g,'i').split(/\s+/).filter(Boolean).sort().join(' ');
+const IDX={}; // key -> {id, nom}
+for(const [id,o] of Object.entries(L)){ o.gen.forEach(n=>IDX[key(n)]={id,nom:false}); o.nom.forEach(n=>{const k=key(n); if(!IDX[k]) IDX[k]={id,nom:true}}); }
+const fmt=v=>{ if(v==null||isNaN(v)) return '?'; const r=Math.round(v*10000)/10000; return String(r).replace('.',','); };
+const num=s=>{ s=s.replace(/\s/g,'').replace(',','.'); return /^\d*\.?\d+$/.test(s)?parseFloat(s):NaN; };
+const close=(a,b)=>Math.abs(a-b)<=Math.max(0.00015,Math.abs(b)*0.02);
+const SUBS={pulv:['pulv','pulvis','pulveres'],supp:['suppanale','suppositoriumanale','suppan','supp','suppositorium'],
+ glob:['globvag','globvagin','globulusvaginalis','globvaginalis','glob','globulus','globuli','globulivaginales'],
+ ung:['ung','unguentum','ungrhin','unguentumrhinologicum'],ungoph:['ungophth','ungoph','unguentumophthalmicum','ung','unguentum'],
+ pasta:['pasta','past'],sol:['sol','solutio','mixt','mixtura'],gtt:['gtt','gutt','guttae'],
+ gttoph:['gttophth','gttoph','guttophth','guttaeophthalmicae'],gttot:['gttotolog','gttotol','gttot','guttotolog','guttaeotologicae']};
+const SUBLABEL={pulv:'M. f. pulv.',supp:'M. f. supp. anale',glob:'M. f. glob. vag.',ung:'M. f. ung.',ungoph:'M. f. ung. ophth.',pasta:'M. f. pasta',sol:'M. f. sol. / M. f. mixt.',gtt:'M. f. gtt.',gttoph:'M. f. gtt. ophth.',gttot:'M. f. gtt. otolog.'};
+const DOP={upp:{label:'Pro usu proprio',alts:['pro usu proprio']},fam:{label:'Pro familiae',alts:['pro familia']},cito:{label:'Cito',alts:['cito','statim']},sine:{label:'Sine conservantia',alts:['sine conservant']}};
+
+function resolve(rows){
+  const errs=[]; const mass=rows.map(()=>0); const groups=[]; let pending=[];
+  rows.forEach((r,i)=>{ const a=r.a;
+    if(a.empty){pending.push(i);return;}
+    if(a.aa){groups.push({idx:[...pending,i],ad:a.ad,v:a.v});pending=[];return;}
+    pending.forEach(p=>errs.push(`Brak ilości przy „${rows[p].name}” (jeśli to grupa „aa”, dopisz „aa …” w ostatnim wierszu grupy).`)); pending=[];
+    if(a.ad) groups.push({idx:[i],ad:true,v:a.v});
+  });
+  pending.forEach(p=>errs.push(`Brak ilości przy „${rows[p].name}”.`));
+  let qs=rows.some(r=>r.a.qs);
+  rows.forEach((r,i)=>{ if(r.a.err) errs.push(`Nie rozumiem ilości „${r.amt}” przy „${r.name}”.`); else if(!r.a.empty&&!r.a.aa&&!r.a.ad&&!r.a.qs&&r.a.iu==null) mass[i]=r.a.v; });
+  groups.filter(g=>!g.ad).forEach(g=>g.idx.forEach(i=>mass[i]=g.v));
+  const adG=groups.filter(g=>g.ad); let total=null;
+  if(adG.length>1) errs.push('„ad” może wystąpić tylko raz (w ostatniej pozycji – podłożu).');
+  if(adG.length===1){ const g=adG[0]; const others=mass.reduce((s,m,i)=>g.idx.includes(i)?s:s+m,0); const share=(g.v-others)/g.idx.length;
+    if(share<=0) errs.push(`Suma składników przekracza „ad ${fmt(g.v)}”.`); g.idx.forEach(i=>mass[i]=share); total=g.v; }
+  else if(!qs) total=mass.reduce((s,m)=>s+m,0);
+  return {mass,total,qs,errs};
+}
+
+function parseAmt(raw){
+  let t=deacc(raw).trim().replace(/!/g,'').trim();
+  if(!t) return {empty:true};
+  if(/^(aa\.?\s*)?q\.?\s*s\.?$/.test(t)) return {qs:true};
+  if(/j\.?\s*m\.?/.test(t)){ const v=num(t.replace(/j\.?\s*m\.?/,'')); return isNaN(v)?{err:true}:{iu:v}; }
+  let unit=null; const um=t.match(/\s*(mg|g)\.?$/); if(um){ unit=um[1]; t=t.slice(0,um.index).trim(); }
+  const m=t.match(/^(aa\.?\s*)?(ad\.?\s*)?(.+)$/); let v=num(m[3]);
+  if(isNaN(v)) return {err:true};
+  if(unit==='mg') v=v/1000;
+  return {aa:!!m[1],ad:!!m[2],v,unit};
+}
+
+// ---------- free-text parser
+const RX_DTD=/(?:^|\s)d\.?\s*t\.?\s*d\.?\s*(?:no\.?|n°|nr\.?|n\.?)?\s*(\d+)/i;
+const RX_DIV=/(?:^|\s)div\.?\s*(?:in\.?\s*)?(?:part?\.?\s*)?(?:aeq\.?\s*)?(?:no\.?|n°|nr\.?|n\.?)?\s*(\d+)/i;
+const RX_AMT=/\s+((?:aa\.?\s+)?(?:ad\.?\s+)?(?:\d[\d ]*(?:[.,]\d+)?|[.,]\d+)\s*(?:j\.?\s*m\.?|mg|g)?\.?|(?:aa\.?\s+)?q\.?\s*s\.?)\s*$/i;
+function parseFree(text){
+  const d={rows:[],sub:'',doseM:'',doseN:'',ds:'',rx:'Rp',dop:'',real:'',slow:'',excl:false};
+  const lines=text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const hasRp=lines.some(l=>/^rp\s*[.:]?(\s|$)/i.test(l));
+  let stage='head';
+  for(let l of lines){
+    const letters=deacc(l).replace(/[^a-z]/g,'');
+    if(letters==='rpw'){ d.rx='Rpw'; continue; }
+    const rp=l.match(/^rp\s*[.:]?(?:\s+(.*))?$/i);
+    if(rp && letters!=='rpw' && !/^rpw/i.test(l)){ stage='ing'; if(!rp[1]) continue; l=rp[1]; }
+    let m;
+    if((m=l.match(RX_DTD))){ d.doseM='dtd'; d.doseN=m[1]; l=(l.slice(0,m.index)+' '+l.slice(m.index+m[0].length)).trim(); }
+    else if((m=l.match(RX_DIV))){ d.doseM='div'; d.doseN=m[1]; l=(l.slice(0,m.index)+' '+l.slice(m.index+m[0].length)).trim(); }
+    l=l.replace(/in\s+caps(ulis)?\.?\s+amyl\w*\.?/i,'').trim();
+    if(!l) continue;
+    if(/^\(.*\)$/.test(l)){ d.slow+=l.slice(1,-1)+' '; continue; }
+    if((m=l.match(/^m\.?\s*d\.?\s*s\.?\s*[:.]?\s*(.*)$/i))){ d.sub='M.D.S.'; d.ds+=(d.ds?' ':'')+m[1]; stage='ds'; continue; }
+    if((m=l.match(/^(?:d\.?\s*s\.?|da\.?\s*(?:et\s+)?signa\.?|s\.)(?=[\s:.]|$)\s*[:.]?\s*(.*)$/i))){ d.ds+=(d.ds?' ':'')+m[1]; stage='ds'; continue; }
+    if(/^(?:m\.?\s*f\.?|misce\.?,?\s*fiat)(?=[\s.a-z]|$)/i.test(l)){ d.sub=l; stage='after'; continue; }
+    if(stage==='ds'){ d.ds+=' '+l; continue; }
+    const n=deacc(l);
+    if(/realiz|(^|\s)od\s*\d/.test(n)){ d.real+=l+' '; continue; }
+    const isDop=Object.values(DOP).some(o=>o.alts.some(a=>n.includes(a)));
+    if(isDop||(hasRp&&stage==='head')){ d.dop+=l+' '; continue; }
+    if(stage==='after'){ d.dop+=l+' '; continue; }
+    // ingredient line
+    let line=l;
+    const par=line.match(/\(([^)]*)\)/); if(par){ d.slow+=par[1]+' '; line=line.replace(/\([^)]*\)/g,' '); }
+    const sl=line.match(/s[lł]ownie\s*[:\-]?\s*(.*)$/i); if(sl){ d.slow+=sl[1]+' '; line=line.slice(0,sl.index); }
+    if(line.includes('!')){ d.excl=true; line=line.replace(/!/g,' '); }
+    line=line.replace(/\s+/g,' ').trim();
+    let name=line, amt='';
+    const am=(' '+line).match(RX_AMT);
+    if(am){ amt=am[1].trim(); name=(' '+line).slice(0,am.index).trim(); }
+    name=name.replace(/[,;:\-–]+$/,'').trim();
+    const names=name.split(/\s*,\s*/).filter(Boolean);
+    if(names.length>1&&/^aa/i.test(amt)){ names.forEach((nm,i)=>d.rows.push({name:nm,amt:i===names.length-1?amt:''})); }
+    else d.rows.push({name,amt});
+  }
+  d.dop=d.dop.trim(); d.real=d.real.trim(); d.slow=d.slow.trim(); d.ds=d.ds.trim();
+  return d;
+}
+
+// ---------- checker (shared by both modes); els = form elements for highlighting (form mode only)
+function check(d,els){
+  marks(); const t=T[cur]; const out=[]; const E=k=>els?els[k]:null;
+  const add=(ok,msg,el)=>{out.push({c:ok===true?'ok':ok==='warn'?'warn':'bad',msg}); if(el&&ok!=='warn') el.classList.add(ok?'ok-f':'bad-f');};
+  const rows=d.rows.filter(r=>r.name||r.amt).map((r,i)=>({...r,a:parseAmt(r.amt),hit:IDX[key(r.name)],nmEl:r.nmEl,amEl:r.amEl}));
+  if(!rows.length){ $('res').innerHTML='<p class="score">Wpisz składniki recepty.</p>'; return; }
+  const exclMark=d.excl||rows.some(r=>r.amt.includes('!'));
+  if(rows.some(r=>r.a.unit)) add('warn','Ilości na recepcie zapisuje się w gramach, cyframi arabskimi, bez miana (np. 0,5 zamiast 500 mg).');
+  const R=resolve(rows); R.errs.forEach(e=>add(false,e));
+  const dm=d.doseM, dn=parseInt(d.doseN,10); let scale=1;
+  if(t.dosed){ const want=t.dosed;
+    if(!dm) add(false,'Lek dzielony – brakuje „d.t.d. No …” lub „div. in part. aeq. No …”.',E('doseM'));
+    else { const okN=Array.isArray(want)?(dn>=want[0]&&dn<=want[1]):dn===want;
+      add(okN, okN?`Liczba dawek: ${dn}`:`Liczba dawek: ${isNaN(dn)?'brak':dn}, oczekiwano ${Array.isArray(want)?`${want[0]}–${want[1]}`:want}`,E('doseN'));
+      if(dm==='div'&&dn>0) scale=1/dn; }
+  } else if(dm) add(false,'To lek niedzielony – „d.t.d. / div.” jest zbędne.',E('doseM'));
+  const per=t.dosed?' (na 1 dawkę)':'';
+  const mass=R.mass.map(m=>m*scale); const total=R.total!=null?R.total*scale:null;
+  const vehSet=new Set(t.veh?t.veh.names:[]); const forbid=t.veh&&t.veh.forbid||{};
+  const ingIds=t.ing.map(x=>Array.isArray(x.k)?x.k:[x.k]);
+  const used=new Set(); const vrows=[];
+  rows.forEach((r,ri)=>{ r.ri=ri; const nmEl=r.nmEl;
+    if(!r.hit){ add(false,`Nie rozpoznaję nazwy „${r.name}”. Sprawdź pisownię łacińską (dopełniacz).`,nmEl); return; }
+    if(r.hit.nom) add(false,`„${r.name}” to mianownik – w recepcie magistralnej nazwa w dopełniaczu: ${L[r.hit.id].gen[0]}`,nmEl);
+    const ii=ingIds.findIndex(a=>a.includes(r.hit.id));
+    if(ii>=0){ if(used.has(ii)) add(false,`„${r.name}” wpisano dwa razy.`,nmEl); used.add(ii); r.ing=ii; if(!r.hit.nom&&nmEl) nmEl.classList.add('ok-f'); return; }
+    if(forbid[r.hit.id]){ add(false,forbid[r.hit.id],nmEl); return; }
+    if(vehSet.has(r.hit.id)){ vrows.push(r); if(!r.hit.nom&&nmEl) nmEl.classList.add('ok-f'); return; }
+    add(false,`${L[r.hit.id].gen[0]} (${L[r.hit.id].pl}) nie pasuje do tego zadania.`,nmEl);
+  });
+  t.ing.forEach((x,ii)=>{ const r=rows.find(r=>r.ing===ii); const pl=x.pl||L[ingIds[ii][0]].pl;
+    if(!r){ add(false,`Brak składnika: ${pl} (${L[ingIds[ii][0]].gen[0]})`); return; }
+    const amEl=r.amEl; const m=mass[r.ri];
+    if(r.a.err) return;
+    if(x.iu!=null){ const ok=r.a.iu!=null&&close(r.a.iu*scale,x.iu); add(ok,ok?`${pl}: ${fmt(x.iu)} j.m.${per}`:`${pl}: oczekiwano ${fmt(x.iu)} j.m.${per}, jest ${r.a.iu!=null?fmt(r.a.iu*scale)+' j.m.':fmt(m)+' g'}`,amEl); return; }
+    if(r.a.qs){ add(false,`${pl}: q.s. można użyć tylko przy podłożu.`,amEl); return; }
+    if(x.amt!=null){ const ok=close(m,x.amt); add(ok,ok?`${pl}: ${fmt(m)} g${per}`:`${pl}: jest ${fmt(m)} g${per}, oczekiwano ${fmt(x.amt)} g`,amEl); }
+    else if(x.amtR){ const ok=m>=x.amtR[0]*0.98&&m<=x.amtR[1]*1.02; add(ok,ok?`${pl}: ${fmt(m)} g`:`${pl}: jest ${fmt(m)} g, oczekiwano ${fmt(x.amtR[0])}–${fmt(x.amtR[1])} g`,amEl); }
+    else if(x.pct!=null||x.pctR){ if(total==null){ add(false,`${pl}: przy stężeniu % masa całości musi być określona (podłoże „ad …”, nie q.s.).`,amEl); return; }
+      const p=m/total*100; const ok=x.pct!=null?close(p,x.pct):(p>=x.pctR[0]-0.2&&p<=x.pctR[1]+0.2);
+      const want=x.pct!=null?`${fmt(x.pct)}%`:`${x.pctR[0]}–${x.pctR[1]}%`;
+      add(ok,ok?`${pl}: ${fmt(m)} g = ${fmt(p)}%${per}`:`${pl}: ${fmt(m)} g to ${fmt(p)}% całości (${fmt(total)} g), oczekiwano ${want}`,amEl); }
+  });
+  if(t.veh){ const v=t.veh;
+    if(!vrows.length){ if(!v.optional) add(false,`Brak podłoża (np. ${L[v.names[0]].gen[0]})`); }
+    else { const n=vrows.length; const okC=n>=v.count[0]&&n<=v.count[1];
+      add(okC, okC?`Podłoże: ${vrows.map(r=>L[r.hit.id].gen[0]).join(', ')}`:`Podłoże: ${n} składn., oczekiwano ${v.count[0]===v.count[1]?v.count[0]:v.count[0]+'–'+v.count[1]}`);
+      if(v.equal&&n>1){ const ms=vrows.map(r=>mass[r.ri]); const ok=ms.every(m=>close(m,ms[0])); add(ok,ok?'Podłoże w równych częściach (aa)':'Składniki podłoża mają być w równych częściach – użyj „aa”.'); }
+      const lastIng=Math.max(-1,...rows.filter(r=>r.ing!=null).map(r=>r.ri)); if(vrows.some(r=>r.ri<lastIng)) add('warn','Podłoże zapisuje się na końcu, po substancjach czynnych.');
+      if(vrows.some(r=>r.a.qs)){ if(!t.qs) add(false,'q.s. jest tu niedozwolone – podaj masę podłoża „ad …” (stężenie % lub działanie miejscowe).',vrows.find(r=>r.a.qs).amEl); else add(true,'Podłoże q.s. – ilość dobierze farmaceuta'); }
+    }
+  }
+  if(t.total!=null&&total!=null&&!R.qs){ const tt=t.total; const ok=Array.isArray(tt)?(total>=tt[0]*0.98&&total<=tt[1]*1.02):close(total,tt);
+    add(ok, ok?`Masa całości${per}: ${fmt(total)} g`:`Masa całości${per}: ${fmt(total)} g, oczekiwano ${Array.isArray(tt)?fmt(tt[0])+'–'+fmt(tt[1]):fmt(tt)} g`); }
+  { const raw=deacc(d.sub).replace(/[^a-z]/g,''); const rest=raw.replace(/^(miscefiat|mf)/,'');
+    const list=SUBS[t.sub]||[]; let okS=raw!==rest&&list.some(a=>rest===a||rest.startsWith(a));
+    if(t.sub==='gtt'&&/oph|oto|rhin/.test(rest)) okS=false;
+    if((t.sub==='ung'||t.sub==='pasta')&&/oph/.test(rest)) okS=false;
+    if(t.sub==='sol'&&raw==='mds') okS=true;
+    add(okS, okS?`Subscriptio: ${d.sub}`:`Subscriptio: oczekiwano ${SUBLABEL[t.sub]}${raw?`, jest „${d.sub}”`:''}`,E('sub')); }
+  { const ds=deacc(d.ds); if(!ds.trim()) add(false,'Brak sygnatury (D.S.).',E('ds'));
+    else { const miss=t.ds.filter(g=>!g.alts.some(a=>ds.includes(deacc(a)))); add(!miss.length, miss.length?`D.S. – brakuje: ${miss.map(m=>m.label).join('; ')}`:'D.S. zawiera wymagane informacje',E('ds')); } }
+  const ann=t.ann||{}; const rx=ann.rx||'Rp';
+  add(d.rx===rx, d.rx===rx?`Rodzaj recepty: ${rx}`:`Rodzaj recepty: potrzebna ${rx}${rx==='Rpw'?' (środek z grupy I-N lub II-P)':''}`,E('rxType'));
+  const dop=deacc(d.dop); const req=ann.dop||[];
+  req.forEach(k=>{ const ok=DOP[k].alts.some(a=>dop.includes(a)); add(ok, ok?`Dopisek: ${DOP[k].label}`:`Brak dopisku „${DOP[k].label}”`,E('dop')); });
+  Object.keys(DOP).filter(k=>!req.includes(k)&&DOP[k].alts.some(a=>dop.includes(a))).forEach(k=>add('warn',`Dopisek „${DOP[k].label}” nie wynika z polecenia.`));
+  if(ann.real){ const r=deacc(d.real); const ok=r.includes('30')&&(/(^|\D)11(\D|$)/.test(r)||r.includes('xi')); add(ok, ok?'Data realizacji „od” wpisana':'Wpisz datę realizacji „od” 30.11.2026.',E('real')); }
+  else if(d.real.trim()) add('warn','Data realizacji „od” nie była wymagana.');
+  if(ann.slow) add(!!d.slow.trim(), d.slow.trim()?'Słowne powtórzenie ilości podane':'Środek z wykazu N/P – powtórz ilość słownie.',E('slow'));
+  else if(d.slow.trim()) add('warn','Słowne powtórzenie nie jest tu wymagane.');
+  if(ann.excl||exclMark){ const ok=!!ann.excl===exclMark; add(ok, ann.excl?(ok?'Przekroczenie dawki max oznaczone (!) – pamiętaj o słownym powtórzeniu i podpisie':'Dawka przekracza maksymalną wg FP XI – oznacz wykrzyknikiem (!), powtórz słownie, podpisz.'):'Dawka nie przekracza maksymalnej – wykrzyknik zbędny.',E('excl')); }
+  const scored=out.filter(o=>o.c!=='warn'); const good=scored.filter(o=>o.c==='ok').length; const all=good===scored.length;
+  if(all){ store.add(cur); fillSelect(); }
+  out.sort((a,b)=>({bad:0,warn:1,ok:2}[a.c]-{bad:0,warn:1,ok:2}[b.c]));
+  let parsed='';
+  if(!els){ const dl=d.doseM?`${d.doseM==='dtd'?'d.t.d.':'div. in part. aeq.'} No ${d.doseN}`:'—';
+    parsed=`<details style="margin-top:12px"><summary>Jak odczytałem receptę</summary><pre>${esc([`Recepta: ${d.rx}`, d.dop&&`Dopisek: ${d.dop}`, d.real&&`Realizacja: ${d.real}`, 'Rp.', ...rows.map(r=>`  ${r.name || '?'}  │  ${r.amt || '(puste – grupa aa)'}`), `M. f.: ${d.sub||'—'}`, `Dawki: ${dl}`, `D.S.: ${d.ds||'—'}`, d.slow&&`Słownie: ${d.slow}`, d.excl&&'Wykrzyknik: tak'].filter(Boolean).join('\n'))}</pre></details>`; }
+  $('res').innerHTML=`<div class="score">${good}/${scored.length} poprawnie <span class="badge ${all?'ok':''}">${all?'Bezbłędnie':'Do poprawy'}</span></div><ul class="items">${out.map(o=>`<li class="${o.c}"><span>${esc(o.msg)}</span></li>`).join('')}</ul>${parsed}`;
+}
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+// ---------- UI
+const $=id=>document.getElementById(id);
+let cur=0, mode='form';
+const store={get(){try{return JSON.parse(localStorage.getItem('rx-solved')||'[]')}catch(e){return[]}},add(i){try{const s=new Set(this.get());s.add(i);localStorage.setItem('rx-solved',JSON.stringify([...s]))}catch(e){}}};
+function fillSelect(){ const solved=new Set(store.get()); const sel=$('taskSel'); sel.innerHTML=''; let og=null,last='';
+  T.forEach((t,i)=>{ if(t.g!==last){og=document.createElement('optgroup');og.label=t.g;sel.appendChild(og);last=t.g;}
+    const o=document.createElement('option');o.value=i;o.textContent=`${solved.has(i)?'✓ ':''}${i+1}. ${t.t.slice(0,58)}…`;og.appendChild(o);});
+  sel.value=cur; $('prog').textContent=`${solved.size} / ${T.length} rozwiązanych`; }
+function addRow(n='',a=''){ const d=document.createElement('div');d.className='row';
+  d.innerHTML='<input class="input nm" type="text" placeholder="Nazwa w dopełniaczu" aria-label="Nazwa składnika"><input class="input am" type="text" placeholder="Ilość" aria-label="Ilość"><button type="button" class="icon ghost" aria-label="Usuń wiersz">×</button>';
+  d.querySelector('.nm').value=n; d.querySelector('.am').value=a; d.querySelector('button').onclick=()=>d.remove();
+  $('rows').appendChild(d); }
+function clearForm(){ $('rows').innerHTML=''; for(let i=0;i<3;i++) addRow(); ['dop','real','sub','doseN','ds','slow','free'].forEach(i=>$(i).value=''); $('doseM').value=''; $('rxType').value='Rp'; $('excl').checked=false; $('res').innerHTML=''; marks(); }
+function marks(){ document.querySelectorAll('.ok-f,.bad-f').forEach(e=>e.classList.remove('ok-f','bad-f')); }
+function show(i){ cur=(i+T.length)%T.length; const t=T[cur]; $('meta').textContent=`Zadanie ${cur+1} · ${t.g} · slajd ${t.s}`; $('ttext').textContent=t.t; $('hint').textContent=t.h; $('taskSel').value=cur; clearForm(); try{localStorage.setItem('rx-cur',cur)}catch(e){} }
+function setMode(m){ mode=m; $('formPanel').hidden=m!=='form'; $('freePanel').hidden=m!=='free'; $('tabForm').setAttribute('aria-selected',m==='form'); $('tabFree').setAttribute('aria-selected',m==='free'); $('res').innerHTML=''; marks(); try{localStorage.setItem('rx-mode',m)}catch(e){} }
+function readForm(){
+  const rowEls=[...$('rows').children];
+  const rows=rowEls.map(el=>({name:el.querySelector('.nm').value.trim(),amt:el.querySelector('.am').value.trim(),nmEl:el.querySelector('.nm'),amEl:el.querySelector('.am')}));
+  return {rows,sub:$('sub').value,doseM:$('doseM').value,doseN:$('doseN').value,ds:$('ds').value,rx:$('rxType').value,dop:$('dop').value,real:$('real').value,slow:$('slow').value,excl:$('excl').checked};
+}
+const formEls=()=>({sub:$('sub'),doseM:$('doseM'),doseN:$('doseN'),ds:$('ds'),rxType:$('rxType'),dop:$('dop'),real:$('real'),slow:$('slow'),excl:$('excl')});
+function showSol(){ const t=T[cur]; $('res').innerHTML=`<div class="score">Przykładowe rozwiązanie</div><p style="margin:0" class="muted">${esc(t.calc||'')}</p><pre>${esc(t.model)}</pre><p class="muted small" style="margin:10px 0 0">Inne poprawne warianty też są akceptowane (np. inne podłoże z listy, metoda dzielenia, zapis „aa”).</p>`; }
+
+$('addRow').onclick=()=>addRow();
+$('formPanel').onsubmit=e=>{e.preventDefault();check(readForm(),formEls());};
+$('freePanel').onsubmit=e=>{e.preventDefault();check(parseFree($('free').value),null);};
+$('free').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();check(parseFree($('free').value),null);} });
+document.querySelectorAll('.showSol').forEach(b=>b.onclick=showSol);
+document.querySelectorAll('.clear').forEach(b=>b.onclick=clearForm);
+$('tabForm').onclick=()=>setMode('form'); $('tabFree').onclick=()=>setMode('free');
+$('prev').onclick=()=>show(cur-1); $('next').onclick=()=>show(cur+1); $('rand').onclick=()=>show(Math.floor(Math.random()*T.length));
+$('taskSel').onchange=e=>show(+e.target.value);
+try{ const c=parseInt(localStorage.getItem('rx-cur'),10); if(!isNaN(c)&&c<T.length) cur=c; }catch(e){}
+fillSelect(); show(cur);
+let m0='free'; try{ if(localStorage.getItem('rx-mode')==='form') m0='form'; }catch(e){} setMode(m0);
+</script>
+
+</body>
+</html>
