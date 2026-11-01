@@ -632,17 +632,29 @@ const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[
 const $=id=>document.getElementById(id);
 let cur=0, mode='form';
 const store={get(){try{return JSON.parse(localStorage.getItem('rx-solved')||'[]')}catch(e){return[]}},add(i){try{const s=new Set(this.get());s.add(i);localStorage.setItem('rx-solved',JSON.stringify([...s]))}catch(e){}}};
+// wersje robocze odpowiedzi – osobno dla każdego zadania
+const drafts={all(){try{return JSON.parse(localStorage.getItem('rx-ans')||'{}')}catch(e){return{}}},
+  get(i){return this.all()[i]},
+  set(i,v){try{const a=this.all(); if(v)a[i]=v; else delete a[i]; localStorage.setItem('rx-ans',JSON.stringify(a))}catch(e){}}};
+const DF=['dop','real','sub','doseN','ds','slow','free','doseM','rxType'];
+function saveDraft(){ const d={rows:[...$('rows').children].map(el=>[el.querySelector('.nm').value,el.querySelector('.am').value])};
+  DF.forEach(k=>d[k]=$(k).value); d.excl=$('excl').checked;
+  const empty=!d.rows.some(r=>r[0]||r[1])&&DF.every(k=>k==='rxType'?d[k]==='Rp':!d[k])&&!d.excl;
+  drafts.set(cur,empty?null:d); }
+function loadDraft(){ const d=drafts.get(cur); if(!d) return;
+  $('rows').innerHTML=''; (d.rows||[]).forEach(r=>addRow(r[0],r[1])); while($('rows').children.length<3) addRow();
+  DF.forEach(k=>{ if(d[k]!=null) $(k).value=d[k]; }); $('excl').checked=!!d.excl; }
 function fillSelect(){ const solved=new Set(store.get()); const sel=$('taskSel'); sel.innerHTML=''; let og=null,last='';
   T.forEach((t,i)=>{ if(t.g!==last){og=document.createElement('optgroup');og.label=t.g;sel.appendChild(og);last=t.g;}
     const o=document.createElement('option');o.value=i;o.textContent=`${solved.has(i)?'✓ ':''}${i+1}. ${t.t.slice(0,58)}…`;og.appendChild(o);});
   sel.value=cur; $('prog').textContent=`${solved.size} / ${T.length} rozwiązanych`; }
 function addRow(n='',a=''){ const d=document.createElement('div');d.className='row';
   d.innerHTML='<input class="input nm" type="text" placeholder="Nazwa w dopełniaczu" aria-label="Nazwa składnika"><input class="input am" type="text" placeholder="Ilość" aria-label="Ilość"><button type="button" class="icon ghost" aria-label="Usuń wiersz">×</button>';
-  d.querySelector('.nm').value=n; d.querySelector('.am').value=a; d.querySelector('button').onclick=()=>d.remove();
+  d.querySelector('.nm').value=n; d.querySelector('.am').value=a; d.querySelector('button').onclick=()=>{d.remove();saveDraft();};
   $('rows').appendChild(d); }
 function clearForm(){ $('rows').innerHTML=''; for(let i=0;i<3;i++) addRow(); ['dop','real','sub','doseN','ds','slow','free'].forEach(i=>$(i).value=''); $('doseM').value=''; $('rxType').value='Rp'; $('excl').checked=false; $('res').innerHTML=''; marks(); }
 function marks(){ document.querySelectorAll('.ok-f,.bad-f').forEach(e=>e.classList.remove('ok-f','bad-f')); }
-function show(i){ cur=(i+T.length)%T.length; const t=T[cur]; $('meta').textContent=`Zadanie ${cur+1} · ${t.g} · slajd ${t.s}`; $('ttext').textContent=t.t; $('hint').textContent=t.h; $('taskSel').value=cur; clearForm(); try{localStorage.setItem('rx-cur',cur)}catch(e){} }
+function show(i){ cur=(i+T.length)%T.length; const t=T[cur]; $('meta').textContent=`Zadanie ${cur+1} · ${t.g} · slajd ${t.s}`; $('ttext').textContent=t.t; $('hint').textContent=t.h; $('taskSel').value=cur; clearForm(); loadDraft(); try{localStorage.setItem('rx-cur',cur)}catch(e){} }
 function setMode(m){ mode=m; $('formPanel').hidden=m!=='form'; $('freePanel').hidden=m!=='free'; $('tabForm').setAttribute('aria-selected',m==='form'); $('tabFree').setAttribute('aria-selected',m==='free'); $('res').innerHTML=''; marks(); try{localStorage.setItem('rx-mode',m)}catch(e){} }
 function readForm(){
   const rowEls=[...$('rows').children];
@@ -657,7 +669,8 @@ $('formPanel').onsubmit=e=>{e.preventDefault();check(readForm(),formEls());};
 $('freePanel').onsubmit=e=>{e.preventDefault();check(parseFree($('free').value),null);};
 $('free').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();check(parseFree($('free').value),null);} });
 document.querySelectorAll('.showSol').forEach(b=>b.onclick=showSol);
-document.querySelectorAll('.clear').forEach(b=>b.onclick=clearForm);
+document.querySelectorAll('.clear').forEach(b=>b.onclick=()=>{clearForm();saveDraft();});
+$('formPanel').addEventListener('input',saveDraft); $('freePanel').addEventListener('input',saveDraft);
 $('tabForm').onclick=()=>setMode('form'); $('tabFree').onclick=()=>setMode('free');
 $('prev').onclick=()=>show(cur-1); $('next').onclick=()=>show(cur+1); $('rand').onclick=()=>show(Math.floor(Math.random()*T.length));
 $('taskSel').onchange=e=>show(+e.target.value);
